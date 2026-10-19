@@ -1,9 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'mortgage.dart';
+import 'mortgage_provider.dart';
 
-void main() {
-  runApp(const MortgageCalculatorApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final preferences = await SharedPreferences.getInstance();
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => MortgageProvider(preferences),
+      child: const MortgageCalculatorApp(),
+    ),
+  );
 }
 
 class MortgageCalculatorApp extends StatelessWidget {
@@ -55,21 +65,12 @@ class SummaryScreen extends StatefulWidget {
 }
 
 class _SummaryScreenState extends State<SummaryScreen> {
-  Mortgage _mortgage = Mortgage();
   bool _acceptedTerms = false;
 
   Future<void> _modifyMortgage() async {
-    final updatedMortgage = await Navigator.of(context).push<Mortgage>(
-      MaterialPageRoute(
-        builder: (_) => EditMortgageScreen(mortgage: _mortgage),
-      ),
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const EditMortgageScreen()),
     );
-    if (updatedMortgage != null && mounted) {
-      setState(() {
-        _mortgage = updatedMortgage;
-        _acceptedTerms = false;
-      });
-    }
   }
 
   Future<void> _onTermsChanged(bool? checked) async {
@@ -103,7 +104,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mortgage = _mortgage;
+    final mortgage = context.watch<MortgageProvider>().mortgage;
     return Scaffold(
       appBar: AppBar(title: const Text('Mortgage Calculator')),
       body: SafeArea(
@@ -142,7 +143,10 @@ class _SummaryScreenState extends State<SummaryScreen> {
                       value: mortgage.formattedAmount,
                     ),
                     const SizedBox(height: 18),
-                    _SummaryRow(label: 'Loan term', value: '${mortgage.years} years'),
+                    _SummaryRow(
+                      label: 'Loan term',
+                      value: '${mortgage.years} years',
+                    ),
                     const SizedBox(height: 18),
                     _SummaryRow(
                       label: 'Interest rate',
@@ -238,9 +242,7 @@ class _SummaryRow extends StatelessWidget {
 }
 
 class EditMortgageScreen extends StatefulWidget {
-  const EditMortgageScreen({super.key, required this.mortgage});
-
-  final Mortgage mortgage;
+  const EditMortgageScreen({super.key});
 
   @override
   State<EditMortgageScreen> createState() => _EditMortgageScreenState();
@@ -261,11 +263,12 @@ class _EditMortgageScreenState extends State<EditMortgageScreen> {
   @override
   void initState() {
     super.initState();
+    final mortgage = context.read<MortgageProvider>().mortgage;
     _amountController = TextEditingController(
-      text: widget.mortgage.amount.toStringAsFixed(2),
+      text: mortgage.amount.toStringAsFixed(2),
     );
-    _years = widget.mortgage.years;
-    _rate = widget.mortgage.rate * 100;
+    _years = mortgage.years;
+    _rate = mortgage.rate * 100;
   }
 
   @override
@@ -278,13 +281,14 @@ class _EditMortgageScreenState extends State<EditMortgageScreen> {
     final amount = double.tryParse(
       _amountController.text.trim().replaceAll(',', ''),
     );
-    if (amount == null || !amount.isFinite || amount < 0) {
-      setState(() => _validationMessage = 'Enter a valid loan amount.');
+    if (amount == null || !amount.isFinite || amount <= 0) {
+      setState(() => _validationMessage = 'Enter a loan amount greater than 0.');
       return;
     }
-    Navigator.of(context).pop(
-      Mortgage(amount: amount, years: _years, rate: _rate / 100),
-    );
+    context.read<MortgageProvider>().updateMortgage(
+          Mortgage(amount: amount, years: _years, rate: _rate / 100),
+        );
+    Navigator.of(context).pop();
   }
 
   @override
@@ -323,8 +327,10 @@ class _EditMortgageScreenState extends State<EditMortgageScreen> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text('Loan term',
-                  style: Theme.of(context).textTheme.titleSmall),
+              child: Text(
+                'Loan term',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
@@ -363,8 +369,10 @@ class _EditMortgageScreenState extends State<EditMortgageScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Interest rate',
-                      style: Theme.of(context).textTheme.titleSmall),
+                  Text(
+                    'Interest rate',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
                   Text(
                     '${_rate.toStringAsFixed(2)}%',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
